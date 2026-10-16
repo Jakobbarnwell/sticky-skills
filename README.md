@@ -4,8 +4,6 @@ Compaction wipes Claude Code's skill map <br/>
 <br/>
 ... **_sticky-skills_ puts it back.**
 
-![sticky-skills](assets/poster.jpg)
-
 https://github.com/user-attachments/assets/48c25e26-1b26-4412-b986-aaa8b63f8994
 
 It's been a long session. Claude has compacted a few times. 
