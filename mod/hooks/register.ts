@@ -3,9 +3,9 @@ import type { Register, SessionMessage } from 'claude-code'
 
 import type { SkillEntries } from '../types'
 
-// Claude Code sends the full skill list once per process and only changes after
-// that, so a compaction loses it. This mod remembers every entry it sees and
-// puts the full list back right after the compaction summary.
+// Claude Code sends the full skill list once per process, and after that only
+// what changed, so a compaction loses it. This mod remembers every entry it sees
+// and puts the full list back right after the compaction summary.
 
 const remembered = atom({ plugin: 'sticky-skills', key: 'entries' } as const, {} as SkillEntries)
 
@@ -34,13 +34,17 @@ function formatList(entries: SkillEntries): string {
   return [HEADER, '', ...Object.values(entries)].join('\n')
 }
 
+function formatReminder(entries: SkillEntries): string {
+  return `<system-reminder>\n${formatList(entries)}\n${LIST_END}`
+}
+
 /** Every entry of the skill lists already in the conversation. */
 function listedEntries(messages: SessionMessage[]): SkillEntries {
   const lists = messages.flatMap(message =>
     message.text
       .split(LIST_START)
       .slice(1)
-      .map(rest => parseEntries(rest.split(LIST_END)[0])),
+      .map(after => parseEntries(after.split(LIST_END)[0])),
   )
   return Object.assign({}, ...lists)
 }
@@ -69,15 +73,14 @@ export const register: Register = on => {
     // A precompute only drafts a summary ahead of time; the real compaction comes later.
     if (e.agentId !== undefined || e.trigger === 'precompute' || 'skip' in result) return result
 
-    // If restoring fails, the compaction still goes through, just without the list.
+    // A failure here costs only the restored list, never the compaction.
     try {
       const entries = await read($, remembered)
       if (Object.keys(entries).length === 0) return result
 
-      const [summary, ...rest] = result.messages
-      const text = `<system-reminder>\n${formatList(entries)}\n${LIST_END}`
-      const list = { role: 'user' as const, text, toolUses: [] }
-      return { ...result, messages: [summary, list, ...rest] }
+      const [summary, ...kept] = result.messages
+      const reminder = { role: 'user' as const, text: formatReminder(entries), toolUses: [] }
+      return { ...result, messages: [summary, reminder, ...kept] }
     } catch {
       return result
     }

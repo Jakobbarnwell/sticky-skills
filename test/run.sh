@@ -15,5 +15,5 @@ for n in range(1, 19):
 PY
 
 run_claude --session-id "$id" "Read f01.txt through f18.txt in order with the Read tool, one call per file, no summaries. \
-Then stress-test my plan: I want to rewrite the generator for these files in Rust. Question me about it."
+Then name the three words that show up most across them."
 report "$1"

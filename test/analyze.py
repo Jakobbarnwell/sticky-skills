@@ -19,26 +19,29 @@ from collections import namedtuple
 HEADER = 'The following skills are available for use with the Skill tool'
 ENTRY = re.compile(r'^- ([\w:.-]+):', re.MULTILINE)
 
-Result = namedtuple('Result', 'compactions bad_requests awaiting_request')
+Analysis = namedtuple('Analysis', 'compactions bad_requests awaiting_request')
 
 
-def strings(value):
-    """Every string nested anywhere in a JSON value."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from strings(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from strings(item)
+def harness_texts(messages):
+    """The text blocks Claude Code wrote, which is where it puts the skill list.
+
+    Tool output and the model's replies can quote a list without being one.
+    """
+    for message in messages:
+        if message.get('role') not in ('system', 'user'):
+            continue
+        content = message['content']
+        if isinstance(content, str):
+            yield content
+        else:
+            yield from (block['text'] for block in content if block.get('type') == 'text')
 
 
 def skill_lists(messages):
     """The text of each skill list in the messages, up to its closing tag."""
     return [
         part.split('</system-reminder>')[0]
-        for text in strings(messages)
+        for text in harness_texts(messages)
         for part in text.split(HEADER)[1:]
     ]
 
@@ -87,18 +90,18 @@ def analyze(path):
                 if block.get('type') == 'tool_use' and block.get('name') == 'Skill':
                     print(f'{i:5} SKILL CALL {block["input"].get("skill")}')
 
-    return Result(compactions, bad_requests, awaiting_request)
+    return Analysis(compactions, bad_requests, awaiting_request)
 
 
 def main(path):
     problems = []
-    main_loop = analyze(path)
-    if main_loop.compactions == 0:
+    main_conversation = analyze(path)
+    if main_conversation.compactions == 0:
         problems.append('no compaction happened')
-    if main_loop.awaiting_request:
+    if main_conversation.awaiting_request:
         problems.append('no request after the last compaction')
-    if main_loop.bad_requests:
-        problems.append(f'main requests {main_loop.bad_requests} lack exactly one full skill list')
+    if main_conversation.bad_requests:
+        problems.append(f'main requests {main_conversation.bad_requests} lack exactly one full skill list')
 
     for subagent in sorted(glob.glob(path.removesuffix('.jsonl') + '/subagents/*.jsonl')):
         print(f'subagent {subagent.rsplit("/", 1)[1]}')

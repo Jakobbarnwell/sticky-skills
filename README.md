@@ -36,7 +36,7 @@ Takes effect in new sessions.
 
 - It takes the same "skills catalogue" list that Claude Code gets at the beginning of the session, then adds the full list again as a
   message right after the compaction summary. 
-- When Claude Code later sends a listing of its own, only entries the
+- When Claude Code later sends a list of its own, only entries the
   conversation doesn't already hold go through, so the list never appears
   twice, including in a resumed session.
 - Subagents keep their own list and are left alone.
