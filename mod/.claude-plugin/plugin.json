@@ -1,0 +1,6 @@
+{
+  "name": "skill-listing-restore",
+  "version": "0.1.0",
+  "description": "Puts the full skill list back in context after every compaction",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,1 @@
+{"hooks":{"SessionStart":[{"matcher":"compact","hooks":[{"type":"command","command":"/Users/jakob/Documents/skill-listing-restore/hook/reload-skills.sh"}]}]}}
