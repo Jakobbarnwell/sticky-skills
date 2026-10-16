@@ -1,69 +1,114 @@
-"""Rebuild each model request in a Claude Code transcript and count skill lists.
+"""Check that every model request in a Claude Code session carried the skill list.
 
-Each `api-request` keeps `keep` messages of the previous request and appends
-the blobs named in `tail`. Prints compactions, Skill calls, and per request how
-many copies of the skill listing the model saw and how many skills they name.
+Usage: analyze.py <session transcript .jsonl>
 
-Exits non-zero unless the main loop compacted, at least one request follows
-each compaction, and every request, the main loop's and each subagent's,
-carries exactly one list naming at least as many skills as its first did.
+Rebuilds each request the model received from the transcript and prints, per
+request, how many skill lists it held and how many skills they named. Also
+prints compactions and Skill calls, then PASS or FAIL.
+
+It passes only if the session compacted, a request followed each compaction,
+and every request, in the main conversation and in each subagent, held exactly
+one list naming at least as many skills as its first request did.
 """
-import glob, json, re, sys
+import glob
+import json
+import re
+import sys
 from collections import namedtuple
 
 HEADER = 'The following skills are available for use with the Skill tool'
+ENTRY = re.compile(r'^- ([\w:.-]+):', re.MULTILINE)
 
-def strings(v):
-    if isinstance(v, str): yield v
-    elif isinstance(v, dict): yield from (s for x in v.values() for s in strings(x))
-    elif isinstance(v, list): yield from (s for x in v for s in strings(x))
+Result = namedtuple('Result', 'compactions bad_requests awaiting_request')
 
-Analysis = namedtuple('Analysis', 'compactions failures awaiting_request')
+
+def strings(value):
+    """Every string nested anywhere in a JSON value."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from strings(item)
+
+
+def skill_lists(messages):
+    """The text of each skill list in the messages, up to its closing tag."""
+    return [
+        part.split('</system-reminder>')[0]
+        for text in strings(messages)
+        for part in text.split(HEADER)[1:]
+    ]
+
 
 def analyze(path):
-    """Prints the transcript's events; answers its compaction count, the
-    requests lacking one full list, and whether the last compaction still
-    awaits a request."""
-    blobs, messages, request = {}, [], 0
-    initial_skills, compactions, awaiting_request, failures = None, 0, False, []
-    for i, r in enumerate(json.loads(l) for l in open(path) if l.strip()):
-        t = r.get('type')
-        if t == 'api-request-blob':
-            blobs[r['hash']] = r['message']
-        elif t == 'api-request':
-            messages = messages[:r.get('keep', 0)] + [blobs.get(h, {'missing': h}) for h in r.get('tail', [])]
-            request += 1
+    # Each `api-request` keeps the first `keep` messages of the previous
+    # request and appends the `api-request-blob`s its `tail` names.
+    blobs, messages = {}, []
+    requests, compactions, first_count = 0, 0, None
+    awaiting_request, bad_requests = False, []
+
+    records = (json.loads(line) for line in open(path) if line.strip())
+    for i, record in enumerate(records):
+        kind = record.get('type')
+
+        if kind == 'api-request-blob':
+            blobs[record['hash']] = record['message']
+
+        elif kind == 'api-request':
+            tail = [blobs.get(h, {'missing': h}) for h in record.get('tail', [])]
+            messages = messages[:record.get('keep', 0)] + tail
+            requests += 1
             awaiting_request = False
-            lists = [part.split('</system-reminder>')[0] for s in strings(messages) for part in s.split(HEADER)[1:]]
-            names = {n for part in lists for n in re.findall(r'^- ([\w:.-]+):', part, re.M)}
-            missing = sum(1 for m in messages if 'missing' in m)
-            print(f'{i:5} request {request:3}: {len(lists)} skill list(s), {len(names)} skills' + (f', {missing} unrecorded message(s)' if missing else ''))
-            if initial_skills is None:
-                initial_skills = len(names)
-            if len(lists) != 1 or len(names) < initial_skills:
-                failures.append(request)
-        elif r.get('subtype') == 'compact_boundary':
+
+            lists = skill_lists(messages)
+            names = {name for text in lists for name in ENTRY.findall(text)}
+            unrecorded = sum('missing' in m for m in messages)
+            line = f'{i:5} request {requests:3}: {len(lists)} skill list(s), {len(names)} skills'
+            if unrecorded:
+                line += f', {unrecorded} unrecorded message(s)'
+            print(line)
+
+            if first_count is None:
+                first_count = len(names)
+            if len(lists) != 1 or len(names) < first_count:
+                bad_requests.append(requests)
+
+        elif record.get('subtype') == 'compact_boundary':
             compactions += 1
             awaiting_request = True
-            print(f'{i:5} COMPACT {(r.get("compactMetadata") or {}).get("trigger")}')
-        elif t == 'assistant':
-            for c in r['message'].get('content', []):
-                if c.get('type') == 'tool_use' and c.get('name') == 'Skill':
-                    print(f'{i:5} SKILL CALL {c["input"].get("skill")}')
-    return Analysis(compactions, failures, awaiting_request)
+            trigger = (record.get('compactMetadata') or {}).get('trigger')
+            print(f'{i:5} COMPACT {trigger}')
 
-main = sys.argv[1]
-compactions, failures, awaiting_request = analyze(main)
-problems = []
-if compactions == 0:
-    problems.append('no compaction happened')
-if awaiting_request:
-    problems.append('no request after the last compaction')
-if failures:
-    problems.append(f'main requests {failures} lack exactly one full skill list')
-for sub in sorted(glob.glob(main.removesuffix('.jsonl') + '/subagents/*.jsonl')):
-    print(f'subagent {sub.rsplit("/", 1)[1]}')
-    if (sub_failures := analyze(sub).failures):
-        problems.append(f'subagent requests {sub_failures} lack exactly one full skill list')
-print('FAIL: ' + '; '.join(problems) if problems else 'PASS')
-sys.exit(1 if problems else 0)
+        elif kind == 'assistant':
+            for block in record['message'].get('content', []):
+                if block.get('type') == 'tool_use' and block.get('name') == 'Skill':
+                    print(f'{i:5} SKILL CALL {block["input"].get("skill")}')
+
+    return Result(compactions, bad_requests, awaiting_request)
+
+
+def main(path):
+    problems = []
+    main_loop = analyze(path)
+    if main_loop.compactions == 0:
+        problems.append('no compaction happened')
+    if main_loop.awaiting_request:
+        problems.append('no request after the last compaction')
+    if main_loop.bad_requests:
+        problems.append(f'main requests {main_loop.bad_requests} lack exactly one full skill list')
+
+    for subagent in sorted(glob.glob(path.removesuffix('.jsonl') + '/subagents/*.jsonl')):
+        print(f'subagent {subagent.rsplit("/", 1)[1]}')
+        bad = analyze(subagent).bad_requests
+        if bad:
+            problems.append(f'subagent requests {bad} lack exactly one full skill list')
+
+    print('FAIL: ' + '; '.join(problems) if problems else 'PASS')
+    return 1 if problems else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1]))

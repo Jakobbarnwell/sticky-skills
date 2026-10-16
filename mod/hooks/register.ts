@@ -1,67 +1,83 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { Register, SessionMessage } from 'claude-code'
 
 import type { SkillEntries } from '../types'
 
-const entries = atom({ plugin: 'sticky-skills', key: 'entries' } as const, {} as SkillEntries)
+// Claude Code sends the full skill list once per process and only changes after
+// that, so a compaction loses it. This mod remembers every entry it sees and
+// puts the full list back right after the compaction summary.
+
+const remembered = atom({ plugin: 'sticky-skills', key: 'entries' } as const, {} as SkillEntries)
 
 const HEADER = 'The following skills are available for use with the Skill tool:'
+const LIST_START = `<system-reminder>\n${HEADER}`
+const LIST_END = '</system-reminder>'
 
-// The engine's listing is "- name: description" entries, descriptions sometimes
-// running onto further lines, under a header line.
-function parseListing(text: string): SkillEntries {
-  const parsed: SkillEntries = {}
-  let name: string | undefined
-  for (const line of text.split('\n')) {
-    const start = /^- ([^\s:]+(?::[^\s:]+)?): /.exec(line)
-    if (start) {
-      name = start[1]
-      parsed[name] = line
-    } else if (name !== undefined) {
-      parsed[name] += '\n' + line
+/** Splits a list into its `- name: description` entries, keyed by name. */
+function parseEntries(list: string): SkillEntries {
+  const entries: SkillEntries = {}
+  let current: string | undefined
+  for (const line of list.split('\n')) {
+    const name = /^- ([^\s:]+(?::[^\s:]+)?): /.exec(line)?.[1]
+    if (name !== undefined) {
+      current = name
+      entries[name] = line
+    } else if (current !== undefined) {
+      entries[current] += '\n' + line
     }
   }
-  for (const key of Object.keys(parsed)) parsed[key] = parsed[key].trimEnd()
-  return parsed
+  for (const name in entries) entries[name] = entries[name].trimEnd()
+  return entries
 }
 
-const render = (list: SkillEntries) => [HEADER, '', ...Object.values(list)].join('\n')
-const OPEN = `<system-reminder>\n${HEADER}`
-const CLOSE = '</system-reminder>'
-// The reminder the mod puts back, and the listings it reads out of such reminders.
-const wrap = (list: SkillEntries) => `<system-reminder>\n${render(list)}\n${CLOSE}`
-const unwrap = (text: string) => text.split(OPEN).slice(1).map(part => parseListing(part.split(CLOSE)[0]))
+function formatList(entries: SkillEntries): string {
+  return [HEADER, '', ...Object.values(entries)].join('\n')
+}
 
-// The engine sends the full skill listing once per process and only deltas
-// after that, so a compaction drops the list for good. The mod keeps every
-// entry the main loop has seen and puts the list back into the compacted
-// conversation, right after the summary, so the next request carries it.
+/** Every entry of the skill lists already in the conversation. */
+function listedEntries(messages: SessionMessage[]): SkillEntries {
+  const lists = messages.flatMap(message =>
+    message.text
+      .split(LIST_START)
+      .slice(1)
+      .map(rest => parseEntries(rest.split(LIST_END)[0])),
+  )
+  return Object.assign({}, ...lists)
+}
+
 export const register: Register = on => {
   on('prompt.attachment', async ($, e, next) => {
     const result = await next(e)
+    // Subagents get their own full list, so only the main conversation needs help.
     if (e.agentId !== undefined || e.type !== 'skill_listing' || result.text === null) return result
 
-    const sent = parseListing(e.text)
-    await update($, entries, known => ({ ...known, ...sent }))
-    // Pass on only entries the conversation does not already hold as sent,
-    // such as the copy the mod put back, which a resumed process cannot know.
-    const held: SkillEntries = Object.assign({}, ...(await $.session.messages()).flatMap(m => unwrap(m.text)))
-    const changed = Object.fromEntries(Object.entries(sent).filter(([n, entry]) => held[n] !== entry))
-    const count = Object.keys(changed).length
+    const sent = parseEntries(e.text)
+    await update($, remembered, known => ({ ...known, ...sent }))
+
+    // A resumed session starts a new process, which re-sends the full list even
+    // though the conversation may already hold it. Pass on only what's new.
+    const listed = listedEntries(await $.session.messages())
+    const unlisted = Object.fromEntries(Object.entries(sent).filter(([name, entry]) => listed[name] !== entry))
+    const count = Object.keys(unlisted).length
     if (count === 0) return { text: null }
-    return count === Object.keys(sent).length ? result : { text: render(changed) }
+    if (count === Object.keys(sent).length) return result
+    return { text: formatList(unlisted) }
   })
 
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
+    // A precompute only drafts a summary ahead of time; the real compaction comes later.
     if (e.agentId !== undefined || e.trigger === 'precompute' || 'skip' in result) return result
-    // A failure here costs only the restored list, never the compaction.
+
+    // If restoring fails, the compaction still goes through, just without the list.
     try {
-      const all = await read($, entries)
-      if (Object.keys(all).length === 0) return result
-      const [summary, ...kept] = result.messages
-      const listing = { role: 'user' as const, text: wrap(all), toolUses: [] }
-      return { ...result, messages: [summary, listing, ...kept] }
+      const entries = await read($, remembered)
+      if (Object.keys(entries).length === 0) return result
+
+      const [summary, ...rest] = result.messages
+      const text = `<system-reminder>\n${formatList(entries)}\n${LIST_END}`
+      const list = { role: 'user' as const, text, toolUses: [] }
+      return { ...result, messages: [summary, list, ...rest] }
     } catch {
       return result
     }
