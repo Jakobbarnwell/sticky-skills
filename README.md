@@ -1,29 +1,18 @@
 # sticky-skills
 
-Compaction wipes Claude Code's skill list. sticky-skills puts it back.
+**Compaction wipes Claude Code's skill list. sticky-skills puts it back.**
 
-After a compaction, auto or manual `/compact`, Claude Code (2.1.302) does not
-re-send its list of available skills, so the model stops routing to skills it
-has not used yet in the session
-([#82017](https://github.com/anthropics/claude-code/issues/82017)).
+![sticky-skills](assets/poster.jpg)
 
-`mod/` is a Claude Code mod that keeps every skill entry the main loop sees and,
-in its `session.compact` hook, puts the list back into the compacted
-conversation right after the summary, so the first request after a compaction,
-mid-turn included, already carries it. When the engine later sends a listing,
-the mod passes on only entries the conversation does not already hold, which
-also covers a resumed session in a new process. Subagents and `precompute`
-compactions are left alone.
+Claude picks a skill by reading the list of available skills: each one's name
+and description. Claude Code sends that list once per session. After a
+compaction, auto or `/compact`, it's gone, so Claude stops reaching for skills
+it hasn't used yet. In one real session, 50 skills were listed before
+`/compact` and 3 after
+([anthropics/claude-code#82017](https://github.com/anthropics/claude-code/issues/82017)).
 
-Known limits: a skill removed mid-session stays in the list the mod puts back,
-and a compaction that installs a precomputed summary is assumed to run the
-`session.compact` hook like any other.
-
-The list is the skills' names and descriptions only, as the engine sends it;
-skill bodies still load when a skill is invoked.
-
-Codex is not affected: its compacted history keeps the developer message that
-holds the skills.
+sticky-skills is a Claude Code mod that puts the full list back right after the
+compaction summary, so the right skill stays findable at the right time.
 
 ## Install
 
@@ -32,30 +21,51 @@ claude plugin marketplace add Jakobbarnwell/sticky-skills
 claude plugin install sticky-skills@sticky-skills
 ```
 
-User-installed mods don't run where an organization manages Claude
-Code.
+Takes effect in new sessions. Mods you install yourself don't run where an
+organization manages Claude Code.
+
+## Why not the `reloadSkills` hook?
+
+The workaround in the issue, a `SessionStart` hook returning
+`reloadSkills: true`, re-sends the list with the next message. When Claude
+compacts in the middle of a turn, the first request after it still goes out
+without the list. sticky-skills writes the list into the compacted
+conversation itself, so no request misses it.
+
+| | Auto-compaction mid-turn | `/compact`, subagent, resume |
+| --- | --- | --- |
+| Claude Code alone | no list after it | no list after it |
+| `reloadSkills` hook | first request has no list | list on every request |
+| sticky-skills | list on every request | list on every request |
+
+## How it works
+
+- It records each skill entry Claude Code sends, then adds the full list as a
+  message right after the compaction summary.
+- When Claude Code later sends a listing of its own, only entries the
+  conversation doesn't already hold go through, so the list never appears
+  twice, including in a resumed session.
+- Subagents keep their own list and are left alone.
+- It's the same list Claude Code sends: names and descriptions only. Skill
+  bodies still load only when a skill is used.
+
+Limits: a skill removed mid-session stays in the restored list until the
+session ends. Codex doesn't need this: its compacted history keeps the skills.
 
 ## Tests
 
-Each script takes the setup to test: `none`, `hook` (the `reloadSkills`
-`SessionStart` hook from the issue, `test/reload-skills.sh`) or `mod`; each
-turns the installed mod off.
+End-to-end, against real Claude Code sessions (Haiku 5.5, Claude Code 2.1.301 and 2.1.302).
+Each script takes the setup to test, `none`, `hook` or `mod`, and turns an
+installed sticky-skills off:
 
-- `test/run.sh <setup>`: one turn that reads enough to auto-compact mid-turn at
-  the global `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
-- `test/manual-compact.sh <setup>`: one process, two `/compact`s between short
-  turns, then a subagent; then a resume in a new process.
+- `test/run.sh <setup>` reads enough files in one turn to auto-compact mid-turn.
+- `test/manual-compact.sh <setup>` runs two `/compact`s, a subagent, then a
+  resume in a new process.
 
-`test/analyze.py` rebuilds every request from the transcript, counts the skill
-lists and the skills they name, and fails unless every request, the main
-loop's and each subagent's, carries exactly one full list. Its output lands in
-`test/out/<session>.summary`, the claude output in `test/out/<session>.log`.
+`test/analyze.py` rebuilds every request from the session transcript and fails
+unless each one, main loop and subagents, carries exactly one full skill list.
+Results land in `test/out/<session>.summary`.
 
-Results (Haiku 5.5). The mod's runs used Claude Code 2.1.302, the auto runs
-without it 2.1.301.
+## License
 
-| Setup | Auto-compaction mid-turn | Manual `/compact`, subagent, resume |
-| --- | --- | --- |
-| none | fails: no list after it | fails: no list after it |
-| hook | fails: first request has no list | passes |
-| mod | passes, twice in one turn | passes |
+MIT
