@@ -26,6 +26,11 @@ function parseListing(text: string): SkillEntries {
 }
 
 const render = (list: SkillEntries) => [HEADER, '', ...Object.values(list)].join('\n')
+const OPEN = `<system-reminder>\n${HEADER}`
+const CLOSE = '</system-reminder>'
+// The reminder the mod puts back, and the listings it reads out of such reminders.
+const wrap = (list: SkillEntries) => `<system-reminder>\n${render(list)}\n${CLOSE}`
+const unwrap = (text: string) => text.split(OPEN).slice(1).map(part => parseListing(part.split(CLOSE)[0]))
 
 // The engine sends the full skill listing once per process and only deltas
 // after that, so a compaction drops the list for good. The mod keeps every
@@ -40,9 +45,7 @@ export const register: Register = on => {
     await update($, entries, known => ({ ...known, ...sent }))
     // Pass on only entries the conversation does not already hold as sent,
     // such as the copy the mod put back, which a resumed process cannot know.
-    const held: SkillEntries = Object.assign({}, ...(await $.session.messages())
-      .flatMap(m => m.text.split(HEADER).slice(1))
-      .map(part => parseListing(part.split('</system-reminder>')[0])))
+    const held: SkillEntries = Object.assign({}, ...(await $.session.messages()).flatMap(m => unwrap(m.text)))
     const changed = Object.fromEntries(Object.entries(sent).filter(([n, entry]) => held[n] !== entry))
     const count = Object.keys(changed).length
     if (count === 0) return { text: null }
@@ -52,12 +55,12 @@ export const register: Register = on => {
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined || e.trigger === 'precompute' || 'skip' in result) return result
-    // Never let our bookkeeping fail the compaction itself.
+    // A failure here costs only the restored list, never the compaction.
     try {
       const all = await read($, entries)
       if (Object.keys(all).length === 0) return result
       const [summary, ...kept] = result.messages
-      const listing = { role: 'user' as const, text: `<system-reminder>\n${render(all)}\n</system-reminder>`, toolUses: [] }
+      const listing = { role: 'user' as const, text: wrap(all), toolUses: [] }
       return { ...result, messages: [summary, listing, ...kept] }
     } catch {
       return result

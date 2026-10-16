@@ -13,6 +13,10 @@ the mod passes on only entries the conversation does not already hold, which
 also covers a resumed session in a new process. Subagents and `precompute`
 compactions are left alone.
 
+Known limits: a skill removed mid-session stays in the list the mod puts back,
+and a compaction that installs a precomputed summary is assumed to run the
+`session.compact` hook like any other.
+
 The list is the skills' names and descriptions only, as the engine sends it;
 skill bodies still load when a skill is invoked.
 

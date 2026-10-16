@@ -9,6 +9,7 @@ each compaction, and every request, the main loop's and each subagent's,
 carries exactly one list naming at least as many skills as its first did.
 """
 import glob, json, re, sys
+from collections import namedtuple
 
 HEADER = 'The following skills are available for use with the Skill tool'
 
@@ -16,6 +17,8 @@ def strings(v):
     if isinstance(v, str): yield v
     elif isinstance(v, dict): yield from (s for x in v.values() for s in strings(x))
     elif isinstance(v, list): yield from (s for x in v for s in strings(x))
+
+Analysis = namedtuple('Analysis', 'compactions failures awaiting_request')
 
 def analyze(path):
     """Prints the transcript's events; answers its compaction count, the
@@ -47,7 +50,7 @@ def analyze(path):
             for c in r['message'].get('content', []):
                 if c.get('type') == 'tool_use' and c.get('name') == 'Skill':
                     print(f'{i:5} SKILL CALL {c["input"].get("skill")}')
-    return compactions, failures, awaiting_request
+    return Analysis(compactions, failures, awaiting_request)
 
 main = sys.argv[1]
 compactions, failures, awaiting_request = analyze(main)
@@ -60,7 +63,7 @@ if failures:
     problems.append(f'main requests {failures} lack exactly one full skill list')
 for sub in sorted(glob.glob(main.removesuffix('.jsonl') + '/subagents/*.jsonl')):
     print(f'subagent {sub.rsplit("/", 1)[1]}')
-    if (sub_failures := analyze(sub)[1]):
+    if (sub_failures := analyze(sub).failures):
         problems.append(f'subagent requests {sub_failures} lack exactly one full skill list')
 print('FAIL: ' + '; '.join(problems) if problems else 'PASS')
 sys.exit(1 if problems else 0)
