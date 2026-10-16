@@ -4,7 +4,6 @@ import type { Register } from 'claude-code'
 import type { SkillEntries } from '../types'
 
 const entries = atom({ plugin: 'skill-listing-restore', key: 'entries' } as const, {} as SkillEntries)
-const resent = atom({ plugin: 'skill-listing-restore', key: 'resent' } as const, {} as SkillEntries)
 
 const HEADER = 'The following skills are available for use with the Skill tool:'
 
@@ -30,51 +29,38 @@ const render = (list: SkillEntries) => [HEADER, '', ...Object.values(list)].join
 
 // The engine sends the full skill listing once per process and only deltas
 // after that, so a compaction drops the list for good. The mod keeps every
-// entry the main loop has seen and, after a compaction, adds the list to the
-// first message the engine injects there (usually the deferred-tools or agent
-// listing it re-sends right away), so the first request already carries it.
+// entry the main loop has seen and puts the list back into the compacted
+// conversation, right after the summary, so the next request carries it.
 export const register: Register = on => {
-  // A module variable, not state: the engine renders a batch of attachments at
-  // once, and only a synchronous check-and-clear lets exactly one claim it.
-  let listingOwed = false
-
   on('prompt.attachment', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId !== undefined || result.text === null) return result
+    if (e.agentId !== undefined || e.type !== 'skill_listing' || result.text === null) return result
 
-    const isOwed = listingOwed
-    listingOwed = false
-
-    if (e.type === 'skill_listing') {
-      const sent = parseListing(e.text)
-      const all = await update($, entries, known => ({ ...known, ...sent }))
-      if (isOwed) {
-        await update($, resent, () => all)
-        return { text: render(all) }
-      }
-      // Pass on only what differs from the copy the mod put back in context.
-      const shown = await read($, resent)
-      if (Object.keys(shown).length === 0) return result
-      const changed = Object.fromEntries(Object.entries(sent).filter(([n, entry]) => shown[n] !== entry))
-      if (Object.keys(changed).length === 0) return { text: null }
-      await update($, resent, known => ({ ...known, ...changed }))
-      return { text: render(changed) }
-    }
-
-    if (!isOwed) return result
-    const all = await read($, entries)
-    if (Object.keys(all).length === 0) return result
-    await update($, resent, () => all)
-    return { text: `${result.text}\n\n${render(all)}` }
+    const sent = parseListing(e.text)
+    await update($, entries, known => ({ ...known, ...sent }))
+    // Pass on only entries the conversation does not already hold as sent,
+    // such as the copy the mod put back, which a resumed process cannot know.
+    const held: SkillEntries = Object.assign({}, ...(await $.session.messages())
+      .flatMap(m => m.text.split(HEADER).slice(1))
+      .map(part => parseListing(part.split('</system-reminder>')[0])))
+    const changed = Object.fromEntries(Object.entries(sent).filter(([n, entry]) => held[n] !== entry))
+    const count = Object.keys(changed).length
+    if (count === 0) return { text: null }
+    return count === Object.keys(sent).length ? result : { text: render(changed) }
   })
 
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined && !('skip' in result)) {
-      listingOwed = true
-      // Never let our bookkeeping fail the compaction itself.
-      await update($, resent, () => ({})).catch(() => {})
+    if (e.agentId !== undefined || e.trigger === 'precompute' || 'skip' in result) return result
+    // Never let our bookkeeping fail the compaction itself.
+    try {
+      const all = await read($, entries)
+      if (Object.keys(all).length === 0) return result
+      const [summary, ...kept] = result.messages
+      const listing = { role: 'user' as const, text: `<system-reminder>\n${render(all)}\n</system-reminder>`, toolUses: [] }
+      return { ...result, messages: [summary, listing, ...kept] }
+    } catch {
+      return result
     }
-    return result
   })
 }

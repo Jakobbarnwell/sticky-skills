@@ -7,15 +7,15 @@ mkdir -p "$fixtures" "$out"
 
 case "${1-}" in
   none) setup=() ;;
-  hook) setup=(--settings "{\"hooks\":{\"SessionStart\":[{\"matcher\":\"compact\",\"hooks\":[{\"type\":\"command\",\"command\":\"$here/reload-skills.sh\"}]}]}}") ;;
+  hook) setup=(--settings "$(python3 -I -c 'import json,sys; print(json.dumps({"hooks": {"SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": sys.argv[1]}]}]}}))' "$here/reload-skills.sh")") ;;
   mod) setup=(--plugin-dir "$root/mod") ;;
   *) echo "usage: $0 none|hook|mod" >&2; exit 2 ;;
 esac
 id=$(uuidgen | tr 'A-Z' 'a-z')
 
-# Runs claude in the fixtures dir with the setup's flags, logging to out/<id>.log.
+# Runs claude in the fixtures dir with the setup's flags, appending to out/<id>.log.
 run_claude() {
-  (cd "$fixtures" && claude -p --model haiku --session-id "$id" ${setup[@]+"${setup[@]}"} "$@") > "$out/$id.log" 2>&1 ||
+  (cd "$fixtures" && claude -p --model haiku ${setup[@]+"${setup[@]}"} "$@") >> "$out/$id.log" 2>&1 ||
     { echo "claude failed, see $out/$id.log" >&2; exit 1; }
 }
 

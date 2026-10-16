@@ -5,14 +5,16 @@ re-send its list of available skills, so the model stops routing to skills it
 has not used yet in the session
 ([#82017](https://github.com/anthropics/claude-code/issues/82017)).
 
-`mod/` is a Claude Code mod that keeps every skill entry it sees and, after a
-compaction, adds the list to the first message the engine injects, so the first
-request after the compaction already carries it. It drops the engine's own
-re-sent copy, passing on only entries that are new or changed. Subagents are
-left alone: their own loop gets its own list.
+`mod/` is a Claude Code mod that keeps every skill entry the main loop sees and,
+in its `session.compact` hook, puts the list back into the compacted
+conversation right after the summary, so the first request after a compaction,
+mid-turn included, already carries it. When the engine later sends a listing,
+the mod passes on only entries the conversation does not already hold, which
+also covers a resumed session in a new process. Subagents and `precompute`
+compactions are left alone.
 
-If the engine injects nothing after a compaction, the list waits for the next
-injected message, at the latest the next prompt's.
+The list is the skills' names and descriptions only, as the engine sends it;
+skill bodies still load when a skill is invoked.
 
 Codex is not affected: its compacted history keeps the developer message that
 holds the skills.
@@ -25,18 +27,18 @@ Each script takes the setup to test: `none`, `hook` (the `reloadSkills`
 - `test/run.sh <setup>`: one turn that reads enough to auto-compact mid-turn at
   the global `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
 - `test/manual-compact.sh <setup>`: one process, two `/compact`s between short
-  turns, then a subagent.
+  turns, then a subagent; then a resume in a new process.
 
 `test/analyze.py` rebuilds every request from the transcript, counts the skill
-lists and the skills they name, and fails unless each request after a
-compaction carries exactly one full list. Its output lands in
+lists and the skills they name, and fails unless every request, the main
+loop's and each subagent's, carries exactly one full list. Its output lands in
 `test/out/<session>.summary`, the claude output in `test/out/<session>.log`.
 
-Results (Haiku 5.5, Claude Code 2.1.302; the auto runs without the mod and the
-resume check ran on 2.1.301):
+Results (Haiku 5.5). The mod's runs used Claude Code 2.1.302, the auto runs
+without it 2.1.301.
 
-| Setup | Auto-compaction mid-turn | Manual `/compact` |
+| Setup | Auto-compaction mid-turn | Manual `/compact`, subagent, resume |
 | --- | --- | --- |
 | none | fails: no list after it | fails: no list after it |
 | hook | fails: first request has no list | passes |
-| mod | passes (resume too) | passes, twice in a row |
+| mod | passes, twice in one turn | passes |
