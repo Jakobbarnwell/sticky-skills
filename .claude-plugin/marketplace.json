@@ -7,7 +7,7 @@
     {
       "name": "sticky-skills",
       "source": "./mod",
-      "description": "The right skill at the right time, even after compaction"
+      "description": "Compaction wipes Claude Code's skill list. sticky-skills puts it back."
     }
   ]
 }

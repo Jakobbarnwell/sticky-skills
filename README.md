@@ -1,6 +1,6 @@
 # sticky-skills
 
-The right skill at the right time, even after compaction.
+Compaction wipes Claude Code's skill list. sticky-skills puts it back.
 
 After a compaction, auto or manual `/compact`, Claude Code (2.1.302) does not
 re-send its list of available skills, so the model stops routing to skills it
