@@ -1,6 +1,11 @@
 {
-  "name": "skill-listing-restore",
+  "name": "sticky-skills",
   "version": "0.1.0",
-  "description": "Puts the full skill list back in context after every compaction",
-  "types": "./types/index.d.ts"
+  "description": "The right skill at the right time, even after compaction: puts the full skill list back after every compaction",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Jakob",
+    "url": "https://github.com/Jakobbarnwell"
+  },
+  "license": "MIT"
 }

@@ -13,7 +13,7 @@ esac
 settings=$(python3 -I -c '
 import json, sys
 setup, hook = sys.argv[1:]
-s = {"enabledPlugins": {"skill-listing-restore@skill-listing-restore": False}}
+s = {"enabledPlugins": {"sticky-skills@sticky-skills": False}}
 if setup == "hook":
     s["hooks"] = {"SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": hook}]}]}
 print(json.dumps(s))' "$1" "$here/reload-skills.sh")

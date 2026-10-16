@@ -3,7 +3,7 @@ export type SkillEntries = Record<string, string>
 
 declare module 'claude-code' {
   interface PluginState {
-    'skill-listing-restore': {
+    'sticky-skills': {
       entries: SkillEntries
     }
   }

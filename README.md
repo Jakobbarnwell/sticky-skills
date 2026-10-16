@@ -1,4 +1,6 @@
-# Skill listing restore
+# sticky-skills
+
+The right skill at the right time, even after compaction.
 
 After a compaction, auto or manual `/compact`, Claude Code (2.1.302) does not
 re-send its list of available skills, so the model stops routing to skills it
@@ -26,12 +28,11 @@ holds the skills.
 ## Install
 
 ```sh
-claude plugin marketplace add ~/Documents/skill-listing-restore
-claude plugin install skill-listing-restore@skill-listing-restore
+claude plugin marketplace add Jakobbarnwell/sticky-skills
+claude plugin install sticky-skills@sticky-skills
 ```
 
-The installed mod reads from `mod/` in this checkout, so edits apply to new
-sessions. User-installed mods don't run where an organization manages Claude
+User-installed mods don't run where an organization manages Claude
 Code.
 
 ## Tests

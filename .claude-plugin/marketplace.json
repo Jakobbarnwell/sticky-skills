@@ -1,13 +1,13 @@
 {
-  "name": "skill-listing-restore",
+  "name": "sticky-skills",
   "owner": {
-    "name": "jakobbarnwell"
+    "name": "Jakobbarnwell"
   },
   "plugins": [
     {
-      "name": "skill-listing-restore",
+      "name": "sticky-skills",
       "source": "./mod",
-      "description": "Puts the full skill list back in context after every compaction"
+      "description": "The right skill at the right time, even after compaction"
     }
   ]
 }

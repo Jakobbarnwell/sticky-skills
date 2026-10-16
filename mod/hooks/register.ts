@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { SkillEntries } from '../types'
 
-const entries = atom({ plugin: 'skill-listing-restore', key: 'entries' } as const, {} as SkillEntries)
+const entries = atom({ plugin: 'sticky-skills', key: 'entries' } as const, {} as SkillEntries)
 
 const HEADER = 'The following skills are available for use with the Skill tool:'
 
