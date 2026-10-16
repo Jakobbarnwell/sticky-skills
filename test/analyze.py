@@ -22,10 +22,11 @@ ENTRY = re.compile(r'^- ([\w:.-]+):', re.MULTILINE)
 Analysis = namedtuple('Analysis', 'compactions bad_requests awaiting_request')
 
 
-def harness_texts(messages):
-    """The text blocks Claude Code wrote, which is where it puts the skill list.
+def injected_texts(messages):
+    """Text blocks of system and user messages, where skill lists are put.
 
-    Tool output and the model's replies can quote a list without being one.
+    Tool output and the model's replies are skipped on purpose: they can quote
+    a list without being one.
     """
     for message in messages:
         if message.get('role') not in ('system', 'user'):
@@ -41,7 +42,7 @@ def skill_lists(messages):
     """The text of each skill list in the messages, up to its closing tag."""
     return [
         part.split('</system-reminder>')[0]
-        for text in harness_texts(messages)
+        for text in injected_texts(messages)
         for part in text.split(HEADER)[1:]
     ]
 

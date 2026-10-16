@@ -10,8 +10,9 @@ import type { SkillEntries } from '../types'
 const remembered = atom({ plugin: 'sticky-skills', key: 'entries' } as const, {} as SkillEntries)
 
 const HEADER = 'The following skills are available for use with the Skill tool:'
-const LIST_START = `<system-reminder>\n${HEADER}`
-const LIST_END = '</system-reminder>'
+const REMINDER_START = '<system-reminder>\n'
+const LIST_START = REMINDER_START + HEADER
+const REMINDER_END = '</system-reminder>'
 
 /** Splits a list into its `- name: description` entries, keyed by name. */
 function parseEntries(list: string): SkillEntries {
@@ -35,7 +36,7 @@ function formatList(entries: SkillEntries): string {
 }
 
 function formatReminder(entries: SkillEntries): string {
-  return `<system-reminder>\n${formatList(entries)}\n${LIST_END}`
+  return `${REMINDER_START}${formatList(entries)}\n${REMINDER_END}`
 }
 
 /** Every entry of the skill lists already in the conversation. */
@@ -44,7 +45,7 @@ function listedEntries(messages: SessionMessage[]): SkillEntries {
     message.text
       .split(LIST_START)
       .slice(1)
-      .map(after => parseEntries(after.split(LIST_END)[0])),
+      .map(after => parseEntries(after.split(REMINDER_END)[0])),
   )
   return Object.assign({}, ...lists)
 }
