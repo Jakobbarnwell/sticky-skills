@@ -5,8 +5,8 @@ declare module 'claude-code' {
   interface PluginState {
     'skill-listing-restore': {
       entries: SkillEntries
-      /** The skill names the mod re-sent since the last compaction. */
-      heldNames: string[]
+      /** The entries the mod put back in context since the last compaction. */
+      resent: SkillEntries
     }
   }
 }

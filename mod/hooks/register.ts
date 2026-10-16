@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 import type { SkillEntries } from '../types'
 
 const entries = atom({ plugin: 'skill-listing-restore', key: 'entries' } as const, {} as SkillEntries)
-const heldNames = atom({ plugin: 'skill-listing-restore', key: 'heldNames' } as const, [] as string[])
+const resent = atom({ plugin: 'skill-listing-restore', key: 'resent' } as const, {} as SkillEntries)
 
 const HEADER = 'The following skills are available for use with the Skill tool:'
 
@@ -26,48 +26,54 @@ function parseListing(text: string): SkillEntries {
   return parsed
 }
 
+const render = (list: SkillEntries) => [HEADER, '', ...Object.values(list)].join('\n')
+
 // The engine sends the full skill listing once per process and only deltas
 // after that, so a compaction drops the list for good. The mod keeps every
-// entry it has seen and, after a compaction, adds the list to the first message
-// the engine injects (the deferred-tools or agent listing it re-sends right
-// away), so the first request after the compaction already carries it.
+// entry the main loop has seen and, after a compaction, adds the list to the
+// first message the engine injects there (usually the deferred-tools or agent
+// listing it re-sends right away), so the first request already carries it.
 export const register: Register = on => {
   // A module variable, not state: the engine renders a batch of attachments at
   // once, and only a synchronous check-and-clear lets exactly one claim it.
-  let isPending = false
+  let listingOwed = false
 
   on('prompt.attachment', async ($, e, next) => {
     const result = await next(e)
+    if (e.agentId !== undefined || result.text === null) return result
+
+    const isOwed = listingOwed
+    listingOwed = false
 
     if (e.type === 'skill_listing') {
       const sent = parseListing(e.text)
-      const names = Object.keys(sent)
-      if (names.length > 0) {
-        await update($, entries, all => ({ ...all, ...sent }))
-        // Already in context through us since the compaction: skip the engine's copy.
-        const held = await read($, heldNames)
-        if (held.length > 0 && names.every(n => held.includes(n))) return { text: null }
+      const all = await update($, entries, known => ({ ...known, ...sent }))
+      if (isOwed) {
+        await update($, resent, () => all)
+        return { text: render(all) }
       }
-      return result
+      // Pass on only what differs from the copy the mod put back in context.
+      const shown = await read($, resent)
+      if (Object.keys(shown).length === 0) return result
+      const changed = Object.fromEntries(Object.entries(sent).filter(([n, entry]) => shown[n] !== entry))
+      if (Object.keys(changed).length === 0) return { text: null }
+      await update($, resent, known => ({ ...known, ...changed }))
+      return { text: render(changed) }
     }
 
-    if (!isPending || result.text === null) return result
-    isPending = false
+    if (!isOwed) return result
     const all = await read($, entries)
-    const names = Object.keys(all)
-    if (names.length === 0) return result
-
-    await update($, heldNames, () => names)
-    const listing = [HEADER, '', ...names.map(n => all[n])].join('\n')
-    return { ...result, text: `${result.text}\n\n${listing}` }
+    if (Object.keys(all).length === 0) return result
+    await update($, resent, () => all)
+    return { text: `${result.text}\n\n${render(all)}` }
   })
 
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined && !('skip' in result)) {
-      isPending = true
+      listingOwed = true
       // Never let our bookkeeping fail the compaction itself.
-      await update($, heldNames, () => []).catch(() => {})
+      await update($, resent, () => ({})).catch(() => {})
     }
     return result
   })
