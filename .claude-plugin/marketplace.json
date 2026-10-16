@@ -1,0 +1,13 @@
+{
+  "name": "skill-listing-restore",
+  "owner": {
+    "name": "jakobbarnwell"
+  },
+  "plugins": [
+    {
+      "name": "skill-listing-restore",
+      "source": "./mod",
+      "description": "Puts the full skill list back in context after every compaction"
+    }
+  ]
+}

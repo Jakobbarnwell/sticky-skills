@@ -23,10 +23,22 @@ skill bodies still load when a skill is invoked.
 Codex is not affected: its compacted history keeps the developer message that
 holds the skills.
 
+## Install
+
+```sh
+claude plugin marketplace add ~/Documents/skill-listing-restore
+claude plugin install skill-listing-restore@skill-listing-restore
+```
+
+The installed mod reads from `mod/` in this checkout, so edits apply to new
+sessions. User-installed mods don't run where an organization manages Claude
+Code.
+
 ## Tests
 
 Each script takes the setup to test: `none`, `hook` (the `reloadSkills`
-`SessionStart` hook from the issue, `test/reload-skills.sh`) or `mod`.
+`SessionStart` hook from the issue, `test/reload-skills.sh`) or `mod`; each
+turns the installed mod off.
 
 - `test/run.sh <setup>`: one turn that reads enough to auto-compact mid-turn at
   the global `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.

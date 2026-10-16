@@ -6,16 +6,24 @@ fixtures="$here/fixtures"; out="$here/out"
 mkdir -p "$fixtures" "$out"
 
 case "${1-}" in
-  none) setup=() ;;
-  hook) setup=(--settings "$(python3 -I -c 'import json,sys; print(json.dumps({"hooks": {"SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": sys.argv[1]}]}]}}))' "$here/reload-skills.sh")") ;;
-  mod) setup=(--plugin-dir "$root/mod") ;;
+  none|hook|mod) ;;
   *) echo "usage: $0 none|hook|mod" >&2; exit 2 ;;
 esac
+# Every setup turns the installed mod off, so only the one under test runs.
+settings=$(python3 -I -c '
+import json, sys
+setup, hook = sys.argv[1:]
+s = {"enabledPlugins": {"skill-listing-restore@skill-listing-restore": False}}
+if setup == "hook":
+    s["hooks"] = {"SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": hook}]}]}
+print(json.dumps(s))' "$1" "$here/reload-skills.sh")
+setup=(--settings "$settings")
+[ "$1" = mod ] && setup+=(--plugin-dir "$root/mod")
 id=$(uuidgen | tr 'A-Z' 'a-z')
 
 # Runs claude in the fixtures dir with the setup's flags, appending to out/<id>.log.
 run_claude() {
-  (cd "$fixtures" && claude -p --model haiku ${setup[@]+"${setup[@]}"} "$@") >> "$out/$id.log" 2>&1 ||
+  (cd "$fixtures" && claude -p --model haiku "${setup[@]}" "$@") >> "$out/$id.log" 2>&1 ||
     { echo "claude failed, see $out/$id.log" >&2; exit 1; }
 }
 
