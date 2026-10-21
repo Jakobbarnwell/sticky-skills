@@ -1,5 +1,11 @@
 # sticky-skills
 
+> [!WARNING]
+> **No longer needed. Please uninstall it.** Since Claude Code 2.1.304, compaction sends the skill list again by itself
+> ([release notes](https://github.com/anthropics/claude-code/releases/tag/v2.1.304)).
+> On those versions sticky-skills makes compactions miss the prompt cache, and it can make a resumed session lose its
+> compaction summary. Uninstall it with `claude plugin uninstall sticky-skills@sticky-skills`.
+
 Compaction wipes Claude Code's skill map <br/>
 <br/>
 ... **_sticky-skills_ puts it back.**
